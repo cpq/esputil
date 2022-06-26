@@ -9,6 +9,11 @@ jobs:
       run: sudo apt-get install musl-tools
     - name: build
       run: make PROG=esputil_linux CC=musl-gcc CFLAGS="-static -s -Os"
+    - name: upload
+      uses: actions/upload-artifact@v3
+      with:
+        name: esputil_linux
+        path: esputil_linux
   macos:
     runs-on: macos-latest
     steps:
@@ -26,6 +31,11 @@ jobs:
     - uses: actions/checkout@v3
     - name: build
       run: make esputil.exe
+    - name: upload
+      uses: actions/upload-artifact@v3
+      with:
+        name: esputil.exe
+        path: esputil.exe
   release:
     needs: [linux, macos, windows]
     runs-on: macos-latest
