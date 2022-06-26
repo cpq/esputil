@@ -28,7 +28,7 @@ jobs:
     - name: upload
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: latest
+        tag_name: 1.0.0
         files: |
           esputil.exe
           esputil_linux
