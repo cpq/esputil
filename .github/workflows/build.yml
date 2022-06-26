@@ -14,8 +14,7 @@ jobs:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v3
-    - name: build
-      run: make PROG=esputil_macos
+    - run: make PROG=esputil_macos
     - uses: actions/upload-artifact@v3
       with:
         path: esputil_macos
@@ -23,8 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - name: build
-      run: make esputil.exe
+    - run: make esputil.exe
     - uses: actions/upload-artifact@v3
       with:
         path: esputil.exe
@@ -32,17 +30,11 @@ jobs:
     needs: [linux, macos, windows]
     runs-on: macos-latest
     steps:
-    - name: download
-      uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v3
       with:
-        path: |
-          esputil.exe
-          esputil_linux
-          espuil_macos
-    - name: show
-      run: find . -ls
-    - name: upload
-      uses: softprops/action-gh-release@v1
+        name: artifact
+    - run: find . -ls
+    - uses: softprops/action-gh-release@v1
       with:
         tag_name: 1.0.0
         files: |
