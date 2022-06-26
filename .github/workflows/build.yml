@@ -40,6 +40,13 @@ jobs:
     needs: [linux, macos, windows]
     runs-on: macos-latest
     steps:
+    -name: download
+      uses: actions/download-artifact@v3
+      with:
+        path: |
+          esputil.exe
+          esputil_linux
+          espuil_macos
     - name: upload
       uses: softprops/action-gh-release@v1
       with:
