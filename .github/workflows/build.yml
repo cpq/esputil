@@ -8,16 +8,27 @@ jobs:
     - name: Install packages
       run: sudo apt-get install musl-tools
     - name: build
-      run: make PROG=esputil_linux BINDIR=bin CC=musl-gcc CFLAGS="-static -s -Os"
+      run: make PROG=esputil_linux CC=musl-gcc CFLAGS="-static -s -Os"
   macos:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v3
     - name: build
-      run: make PROG=esputil_macos BINDIR=bin
+      run: make PROG=esputil_macos
   windows:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
     - name: build
-      run: make esputil.exe BINDIR=bin
+      run: make esputil.exe
+  release:
+    needs: [linux, macos, windows]
+    runs-on: macos-latest
+    steps:
+    - uses: softprops/action-gh-release@v1
+    - name: upload
+      whith:
+        files: |
+          esputil.exe
+          esputil_linux
+          espuil_macos

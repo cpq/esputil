@@ -8,12 +8,10 @@ SERIAL_PORT ?= /dev/ttyUSB0
 all: $(PROG)
 
 $(PROG): esputil.c
-	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) $? -o $(BINDIR)/$@
 
 esputil.exe: esputil.c
-	@mkdir -p $(BINDIR)
-	$(DOCKER) mdashnet/vc98 wine cl /nologo /W3 /MD /Os $? ws2_32.lib /Fe$(BINDIR)/$@
+	$(DOCKER) mdashnet/vc98 wine cl /nologo /W3 /MD /Os $? ws2_32.lib /Fe$@
 
 wintest: esputil.exe
 	ln -fs $(SERIAL_PORT) ~/.wine/dosdevices/com55 && wine $? -p '\\.\COM55' -v info
