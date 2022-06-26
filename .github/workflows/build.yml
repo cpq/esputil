@@ -29,9 +29,11 @@ jobs:
       with:
         name: artifact
     - run: find . -ls
+    - run: git describe --abbrev=0 --tags
+    - run: echo TAG=$(git describe --abbrev=0 --tags) >> $GITHUB_ENV
     - uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ github.ref }}
+        tag_name: ${{ env.TAG }}
         files: |
           esputil.exe
           esputil_linux
