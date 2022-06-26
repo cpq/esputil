@@ -48,7 +48,7 @@ jobs:
           esputil_linux
           espuil_macos
     - name: show
-      run: find .
+      run: find . -ls
     - name: upload
       uses: softprops/action-gh-release@v1
       with:
