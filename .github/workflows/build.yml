@@ -25,12 +25,12 @@ jobs:
     needs: [ linux, macos ]
     runs-on: macos-latest
     steps:
+    - run: pwd
+    - run: git describe --abbrev=0 --tags
     - uses: actions/download-artifact@v3
       with:
         name: artifact
-    - run: pwd . -ls
     - run: find . -ls
-    - run: git describe --abbrev=0 --tags
     - run: echo TAG=$(git describe --abbrev=0 --tags) >> $GITHUB_ENV
     - uses: softprops/action-gh-release@v1
       with:
