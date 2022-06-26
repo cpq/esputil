@@ -22,7 +22,7 @@ jobs:
       with:
         path: esputil_macos
   release:
-    needs: [linux, macos, windows]
+    needs: [ linux, macos ]
     runs-on: macos-latest
     steps:
     - uses: actions/download-artifact@v3
