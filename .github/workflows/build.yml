@@ -40,7 +40,7 @@ jobs:
     needs: [linux, macos, windows]
     runs-on: macos-latest
     steps:
-    -name: download
+    - name: download
       uses: actions/download-artifact@v3
       with:
         path: |
