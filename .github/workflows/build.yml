@@ -21,4 +21,14 @@ jobs:
     - uses: actions/checkout@v3
     - name: build
       run: make esputil.exe
-
+  release:
+    needs: [linux, macos, windows]
+    runs-on: macos-latest
+    steps:
+    - name: upload
+      uses: softprops/action-gh-release@v1
+      whith:
+        files: |
+          esputil.exe
+          esputil_linux
+          espuil_macos
