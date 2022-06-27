@@ -1,21 +1,20 @@
-# A ESP32 flashing utility
+# ESP32 flashing utility
 
 `esputil` is a command line tool for managing Espressif devices. It is a
-replacement of `esptool.py`. `esputil` is written in C and is available as a
-no-dependency static binaries for Mac, Linux, Windows:
+replacement for `esptool.py`. `esputil` is written in C and is available as a
+no-dependency static binary for Mac, Linux, Windows:
 
 - Windows binary: [esputil.exe](https://github.com/cpq/esputil/releases/latest/download/esputil.exe)
 - Linux binary: [esputil_linux](https://github.com/cpq/esputil/releases/latest/download/esputil_linux)
 - MacOS binary: [esputil_macos](https://github.com/cpq/esputil/releases/latest/download/esputil_macos)
 
 
-The following `esputil` features makes it useful for dealing with ESP32:
+Some notable features are:
 - `esputil mkhex` command can create a single .hex file from multiple .bin
   files, which is useful for distributing ESP32 firmwares as a single
   flashable file
-- `esputil unhex` command unpacks a .hex file back into a collection of .bin
-  files
-- `esputil flash` command can flash .hex files and .bin files
+- `esputil unhex` command unpacks .hex file back into a set of .bin files
+- `esputil flash` command can flash either .hex files or .bin files
 
 
 # Usage
