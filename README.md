@@ -4,9 +4,9 @@
 replacement of `esptool.py`. `esputil` is written in C and is available as a
 no-dependency static binaries for Mac, Linux, Windows:
 
-- Windows binary: [esptuil.exe](https://github.com/cpq/esputil/releases/latest/download/esputil.exe)
-- Linux binary: [esptuil_linux](https://github.com/cpq/esputil/releases/latest/download/esputil_linux)
-- MacOS binary: [esptuil_macos](https://github.com/cpq/esputil/releases/latest/download/esputil_macos)
+- Windows binary: [esputil.exe](https://github.com/cpq/esputil/releases/latest/download/esputil.exe)
+- Linux binary: [esputil_linux](https://github.com/cpq/esputil/releases/latest/download/esputil_linux)
+- MacOS binary: [esputil_macos](https://github.com/cpq/esputil/releases/latest/download/esputil_macos)
 
 
 The following `esputil` features makes it useful for dealing with ESP32:
