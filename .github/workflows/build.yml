@@ -36,7 +36,7 @@ jobs:
     - run: find . -ls
     - uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ env.TAG }}
+        tag_name: 1.0.0
         files: |
           esputil.exe
           esputil_linux
