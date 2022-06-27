@@ -5,17 +5,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - run: git fetch --prune --unshallow
-    - run: echo TAG=$(git describe --abbrev=0 --tags) >> $GITHUB_ENV
-    - run: echo ${{ env.TAG }}
     - run: sudo apt-get install musl-tools
     - run: make PROG=esputil_linux CC=musl-gcc CFLAGS="-static -s -Os"
     - run: make esputil.exe
+    - run: git fetch --prune --unshallow
+    - run: git describe --abbrev=0 --tags > tag.txt
     - uses: actions/upload-artifact@v3
       with:
         path: |
           esputil.exe
           esputil_linux
+          tag.txt
   macos:
     runs-on: macos-latest
     steps:
@@ -28,11 +28,13 @@ jobs:
     needs: [ linux, macos ]
     runs-on: macos-latest
     steps:
-    - run: echo ${{ env.TAG }}
     - uses: actions/download-artifact@v3
       with:
         name: artifact
     - run: find . -ls
+    - run: cat tag.txt
+    - run: echo TAG=$(cat tag.txt) >> $GITHUB_ENV
+    - run: echo ${{ env.TAG }}
     - uses: softprops/action-gh-release@v1
       with:
         tag_name: 1.0.0
