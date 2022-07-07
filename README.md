@@ -1,8 +1,9 @@
 # ESP32 flashing utility
 
 `esputil` is a command line tool for managing Espressif devices. It is a
-replacement for `esptool.py`. `esputil` is written in C and is available as a
-no-dependency static binary for Mac, Linux, Windows:
+replacement for `esptool.py`. `esputil` is part of https://github.com/cpq/mdk.
+It is written in C and is available as a no-dependency static binary for Mac,
+Linux, Windows
 
 - Windows binary: [esputil.exe](https://github.com/cpq/esputil/releases/latest/download/esputil.exe)
 - Linux binary: [esputil_linux](https://github.com/cpq/esputil/releases/latest/download/esputil_linux)
