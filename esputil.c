@@ -481,12 +481,32 @@ static int read32(struct ctx *ctx, uint32_t addr, uint32_t *value) {
 // Read chip ID from ROM and setup ctx->chip pointer
 static void chip_detect(struct ctx *ctx) {
   size_t i, nchips;
-  if (read32(ctx, 0x40001000, &ctx->chip.id)) fail("Error reading chip ID\n");
+  uint32_t chipid;
+  if (read32(ctx, 0x40001000, &chipid)) fail("Error reading chip ID\n");
   nchips = sizeof(s_known_chips) / sizeof(s_known_chips[0]);
   for (i = 0; i < nchips; i++) {
-    if (s_known_chips[i].id == ctx->chip.id) ctx->chip = s_known_chips[i];
+    if (s_known_chips[i].id == chipid) {
+      if (ctx->chip.id && ctx->chip.id != chipid) {
+        fail( "Chip specified (%s) does not match chip detected (%s)\n", ctx->chip.name, s_known_chips[i].name );
+      }
+      ctx->chip = s_known_chips[i];
+      return;
+    }
   }
-};
+  fail("Unknown chip ID: %08x\n", chipid);
+}
+
+static void set_chip_from_string(struct ctx *ctx, const char * name) {
+  size_t i, nchips;
+  nchips = sizeof(s_known_chips) / sizeof(s_known_chips[0]);
+  for (i = 0; i < nchips; i++) {
+    if ( strcasecmp(s_known_chips[i].name, name ) == 0 ) {
+      ctx->chip = s_known_chips[i];
+      return;
+    }
+  }
+  fail("Unknown chip type: %s\n", name);
+}
 
 // Assume chip is rebooted and is in download mode.
 // Send SYNC commands until success, and detect chip ID
@@ -776,6 +796,10 @@ static void flashbin(struct ctx *ctx, uint16_t flash_params,
       // Common header is 8, plus extended header offset 4 = 12
       if (ctx->chip.id == CHIP_ID_ESP32_C3_ECO3) buf[hs + 12] = 5;
       if (ctx->chip.id == CHIP_ID_ESP32_C3_ECO_1_2) buf[hs + 12] = 5;
+      if (ctx->chip.id == CHIP_ID_ESP32_S2) {
+        buf[hs + 8] = 0;
+        buf[hs + 12] = 2;
+      }
     }
 
     // Align buffer to block_size and pad with 0xff
@@ -912,13 +936,19 @@ static struct Elf32_Phdr elf_get_phdr(const struct mem *elf, int no) {
   return h[no];
 }
 
-static int mkbin(const char *elf_path, const char *bin_path, bool verbose) {
+static int mkbin(const char *elf_path, const char *bin_path, struct ctx * ctx) {
   struct mem elf = read_entire_file(elf_path);
   FILE *bin_fp = fopen(bin_path, "w+b");
-  uint8_t common_hdr[] = {0xe9, 0, 0, 0};
-  uint8_t extended_hdr[] = {0xee, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+  uint8_t common_hdr[] = {0xe9, 1, 0, 0};
+  uint8_t extended_hdr[] = {0xee, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   uint8_t i, j, cs = 0xef, zero = 0, num_segments = elf_get_num_segments(&elf);
   uint32_t entrypoint = elf_get_entry_point(&elf);
+
+  // ESP32S2
+  if (ctx->chip.id == 0x000007c6) {
+    extended_hdr[0] = 0x00;
+    extended_hdr[4] = 2;
+  }
 
   if (bin_fp == NULL) fail("Cannot open %s: %s\n", bin_path, strerror(errno));
   if (elf.len < (int) sizeof(struct Elf32_Phdr)) fail("corrupt ELF file\n");
@@ -930,14 +960,14 @@ static int mkbin(const char *elf_path, const char *bin_path, bool verbose) {
   fwrite(common_hdr, 1, sizeof(common_hdr), bin_fp);      // Common header
   fwrite(&entrypoint, 1, sizeof(entrypoint), bin_fp);     // Entry point
   fwrite(extended_hdr, 1, sizeof(extended_hdr), bin_fp);  // Extended header
-  if (verbose) printf("%s: %d segments found\n", elf_path, (int) num_segments);
+  if (ctx->verbose) printf("%s: %d segments found\n", elf_path, (int) num_segments);
 
   // Iterate over segments
   for (i = 0; i < num_segments; i++) {
     struct Elf32_Phdr h = elf_get_phdr(&elf, i);
     uint32_t load_address = h.p_vaddr;
     uint32_t aligned_size = align_to(h.p_filesz, 4);
-    if (verbose) printf("  addr %x size %u\n", load_address, aligned_size);
+    if (ctx->verbose) printf("  addr %x size %u\n", load_address, aligned_size);
     fwrite(&load_address, 1, sizeof(load_address), bin_fp);
     fwrite(&aligned_size, 1, sizeof(aligned_size), bin_fp);
     fwrite(elf.ptr + h.p_offset, 1, h.p_filesz, bin_fp);
@@ -1045,6 +1075,8 @@ int main(int argc, const char **argv) {
       ctx.fpar = argv[++i];
     } else if (strcmp(argv[i], "-fspi") == 0 && i + 1 < argc) {
       ctx.fspi = argv[++i];
+    } else if (strcmp(argv[i], "-chip") == 0 && i + 1 < argc) {
+      set_chip_from_string(&ctx, argv[++i]);
     } else if (strcmp(argv[i], "-tmp") == 0 && i + 1 < argc) {
       temp_dir = argv[++i];
     } else if (strcmp(argv[i], "-udp") == 0 && i + 1 < argc) {
@@ -1063,7 +1095,7 @@ int main(int argc, const char **argv) {
   // Commands that do not require serial port
   if (strcmp(*command, "mkbin") == 0) {
     if (!command[1] || !command[2]) usage(&ctx);
-    return mkbin(command[1], command[2], ctx.verbose);
+    return mkbin(command[1], command[2], &ctx);
   } else if (strcmp(*command, "mkhex") == 0) {
     return mkhex(&command[1]);
   } else if (strcmp(*command, "unhex") == 0) {
