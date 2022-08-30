@@ -101,7 +101,7 @@ static struct chip s_known_chips[] = {
     {CHIP_ID_ESP32, "ESP32", 4096},
     {CHIP_ID_ESP32_C3_ECO_1_2, "ESP32-C3-ECO2", 0},
     {CHIP_ID_ESP32_C3_ECO3, "ESP32-C3-ECO3", 0},
-    {CHIP_ID_ESP32_S2, "ESP32-S2", 0},
+    {CHIP_ID_ESP32_S2, "ESP32-S2", 4096},
     {CHIP_ID_ESP32_S3_BETA2, "ESP32-S3-BETA2", 0},
     {CHIP_ID_ESP32_S3_BETA2, "ESP32-S3-BETA3", 0},
     {CHIP_ID_ESP32_S3_BETA2, "ESP32-C6-BETA", 0},
@@ -487,7 +487,8 @@ static void chip_detect(struct ctx *ctx) {
   for (i = 0; i < nchips; i++) {
     if (s_known_chips[i].id == chipid) {
       if (ctx->chip.id && ctx->chip.id != chipid) {
-        fail( "Chip specified (%s) does not match chip detected (%s)\n", ctx->chip.name, s_known_chips[i].name );
+        fail("Chip specified (%s) does not match chip detected (%s)\n",
+             ctx->chip.name, s_known_chips[i].name);
       }
       ctx->chip = s_known_chips[i];
       return;
@@ -496,11 +497,11 @@ static void chip_detect(struct ctx *ctx) {
   fail("Unknown chip ID: %08x\n", chipid);
 }
 
-static void set_chip_from_string(struct ctx *ctx, const char * name) {
+static void set_chip_from_string(struct ctx *ctx, const char *name) {
   size_t i, nchips;
   nchips = sizeof(s_known_chips) / sizeof(s_known_chips[0]);
   for (i = 0; i < nchips; i++) {
-    if ( strcasecmp(s_known_chips[i].name, name ) == 0 ) {
+    if (strcasecmp(s_known_chips[i].name, name) == 0) {
       ctx->chip = s_known_chips[i];
       return;
     }
@@ -936,7 +937,7 @@ static struct Elf32_Phdr elf_get_phdr(const struct mem *elf, int no) {
   return h[no];
 }
 
-static int mkbin(const char *elf_path, const char *bin_path, struct ctx * ctx) {
+static int mkbin(const char *elf_path, const char *bin_path, struct ctx *ctx) {
   struct mem elf = read_entire_file(elf_path);
   FILE *bin_fp = fopen(bin_path, "w+b");
   uint8_t common_hdr[] = {0xe9, 1, 0, 0};
@@ -960,7 +961,8 @@ static int mkbin(const char *elf_path, const char *bin_path, struct ctx * ctx) {
   fwrite(common_hdr, 1, sizeof(common_hdr), bin_fp);      // Common header
   fwrite(&entrypoint, 1, sizeof(entrypoint), bin_fp);     // Entry point
   fwrite(extended_hdr, 1, sizeof(extended_hdr), bin_fp);  // Extended header
-  if (ctx->verbose) printf("%s: %d segments found\n", elf_path, (int) num_segments);
+  if (ctx->verbose)
+    printf("%s: %d segments found\n", elf_path, (int) num_segments);
 
   // Iterate over segments
   for (i = 0; i < num_segments; i++) {
