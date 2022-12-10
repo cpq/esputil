@@ -103,8 +103,8 @@ static struct chip s_known_chips[] = {
     {CHIP_ID_ESP32_C3_ECO3, "ESP32-C3-ECO3", 0},
     {CHIP_ID_ESP32_S2, "ESP32-S2", 4096},
     {CHIP_ID_ESP32_S3_BETA2, "ESP32-S3-BETA2", 0},
-    {CHIP_ID_ESP32_S3_BETA2, "ESP32-S3-BETA3", 0},
-    {CHIP_ID_ESP32_S3_BETA2, "ESP32-C6-BETA", 0},
+    {CHIP_ID_ESP32_S3_BETA3, "ESP32-S3-BETA3", 0},
+    {CHIP_ID_ESP32_C6_BETA, "ESP32-C6-BETA", 0},
 };
 
 static int s_signo;
