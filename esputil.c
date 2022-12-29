@@ -787,9 +787,9 @@ static void flashbin(struct ctx *ctx, uint16_t flash_params,
            flash_offset + oft - n, oft * 100 / size);
     fflush(stdout);
 
-    // Embed flash params into an image
-    if (seq == 0) {
-      if (flash_offset == ctx->chip.bla && flash_params != 0) {
+    // Embed flash params into a bootloader image
+    if (seq == 0 && flash_offset == ctx->chip.bla) {
+      if (flash_params != 0) {
         buf[hs + 2] = (uint8_t) ((flash_params >> 8) & 255);
         buf[hs + 3] = (uint8_t) (flash_params & 255);
       }
