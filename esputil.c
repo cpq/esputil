@@ -422,16 +422,30 @@ static void hard_reset(int fd) {
   set_rts(fd, false);  // EN -> HIGH
 }
 
-static void reset_to_bootloader(int fd) {
-  sleep_ms(100);       // Wait
-  set_dtr(fd, false);  // IO0 -> HIGH
-  set_rts(fd, true);   // EN -> LOW
-  sleep_ms(100);       // Wait
-  set_dtr(fd, true);   // IO0 -> LOW
-  set_rts(fd, false);  // EN -> HIGH
-  sleep_ms(50);        // Wait
-  set_dtr(fd, false);  // IO0 -> HIGH
-  flushio(fd);         // Discard all data
+static void reset_to_bootloader_usb_jtag_serial(int fd) {
+  set_rts(fd, false);
+  set_dtr(fd, false);
+  sleep_ms(100);
+  set_dtr(fd, true);
+  set_rts(fd, false);
+  sleep_ms(100);
+  set_rts(fd, true);
+  set_dtr(fd, false);
+  set_rts(fd, true);
+  sleep_ms(100);
+  set_dtr(fd, false);
+  set_rts(fd, false);
+}
+
+static void reset_to_bootloader(int fd, int extra_delay) {
+  sleep_ms(100);               // Wait
+  set_dtr(fd, false);          // IO0 -> HIGH
+  set_rts(fd, true);           // EN -> LOW
+  sleep_ms(100);               // Wait
+  set_dtr(fd, true);           // IO0 -> LOW
+  set_rts(fd, false);          // EN -> HIGH
+  sleep_ms(50 + extra_delay);  // Wait
+  set_dtr(fd, false);          // IO0 -> HIGH
 }
 
 // Execute serial command.
@@ -457,7 +471,7 @@ static int cmd(struct ctx *ctx, uint8_t op, void *buf, uint16_t len,
     // if (ctx->verbose) dump("--RAW_RESPONSE:", tmp, n);
     for (i = 0; i < n; i++) {
       size_t r = slip_recv(tmp[i], &ctx->slip);  // Pass to SLIP state machine
-      if (r == 0 && ctx->slip.mode == 0) putchar(tmp[i]);  // In serial mode
+      // if (r == 0 && ctx->slip.mode == 0) putchar(tmp[i]);  // In serial mode
       if (r == 0) continue;
       if (ctx->verbose) dump("--SLIP_RESPONSE:", ctx->slip.buf, r);
       if (r < 10 || ctx->slip.buf[0] != 1 || ctx->slip.buf[1] != op) continue;
@@ -512,18 +526,24 @@ static void set_chip_from_string(struct ctx *ctx, const char *name) {
 // Assume chip is rebooted and is in download mode.
 // Send SYNC commands until success, and detect chip ID
 static bool chip_connect(struct ctx *ctx) {
-  int i;
-  reset_to_bootloader(ctx->fd);
-  for (i = 0; i < 50; i++) {
-    uint8_t data[36] = {7, 7, 0x12, 0x20};
-    memset(data + 4, 0x55, sizeof(data) - 4);
-    if (cmd(ctx, 8, data, sizeof(data), 0, 250) == 0) {
-      sleep_ms(50);
-      flushio(ctx->fd);  // Discard all data
-      chip_detect(ctx);
-      return true;
+  int i, j;
+  for (j = 0; j < 6; j++) {
+    if (j & 1) {
+      reset_to_bootloader_usb_jtag_serial(ctx->fd);
+    } else {
+      reset_to_bootloader(ctx->fd, j == 2 ? 400 : 0);
     }
     flushio(ctx->fd);
+    for (i = 0; i < 2 + j; i++) {
+      uint8_t data[36] = {7, 7, 0x12, 0x20};
+      memset(data + 4, 0x55, sizeof(data) - 4);
+      if (cmd(ctx, 8, data, sizeof(data), 0, 100) == 0) {
+        sleep_ms(50);
+        flushio(ctx->fd);  // Discard all data
+        chip_detect(ctx);
+        return true;
+      }
+    }
   }
   return false;
 }
