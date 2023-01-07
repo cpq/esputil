@@ -201,7 +201,7 @@ static void dump(const char *label, const uint8_t *buf, size_t len) {
 
 static void uart_tx(unsigned char ch, void *arg) {
   int fd = *(int *) arg;
-  if (write(fd, &ch, 1) != 1) fail("failed to write %d to fd %d", ch, fd);
+  if (write(fd, &ch, 1) != 1) fail("failed to write %d to fd %d\n", ch, fd);
 }
 
 static void usage(struct ctx *ctx) {
@@ -437,15 +437,15 @@ static void reset_to_bootloader_usb_jtag_serial(int fd) {
   set_rts(fd, false);
 }
 
-static void reset_to_bootloader(int fd, int extra_delay) {
-  sleep_ms(100);               // Wait
-  set_dtr(fd, false);          // IO0 -> HIGH
-  set_rts(fd, true);           // EN -> LOW
-  sleep_ms(100);               // Wait
-  set_dtr(fd, true);           // IO0 -> LOW
-  set_rts(fd, false);          // EN -> HIGH
-  sleep_ms(50 + extra_delay);  // Wait
-  set_dtr(fd, false);          // IO0 -> HIGH
+static void reset_to_bootloader(int fd) {
+  sleep_ms(100);       // Wait
+  set_dtr(fd, false);  // IO0 -> HIGH
+  set_rts(fd, true);   // EN -> LOW
+  sleep_ms(100);       // Wait
+  set_dtr(fd, true);   // IO0 -> LOW
+  set_rts(fd, false);  // EN -> HIGH
+  sleep_ms(50);        // Wait
+  set_dtr(fd, false);  // IO0 -> HIGH
 }
 
 // Execute serial command.
@@ -528,15 +528,16 @@ static void set_chip_from_string(struct ctx *ctx, const char *name) {
 static bool chip_connect(struct ctx *ctx) {
   int i, j;
   for (j = 0; j < 6; j++) {
+    // Alternate different reset methods
     if (j & 1) {
       reset_to_bootloader_usb_jtag_serial(ctx->fd);
     } else {
-      reset_to_bootloader(ctx->fd, j == 2 ? 400 : 0);
+      reset_to_bootloader(ctx->fd);
     }
     flushio(ctx->fd);
     for (i = 0; i < 2 + j; i++) {
-      uint8_t data[36] = {7, 7, 0x12, 0x20};
-      memset(data + 4, 0x55, sizeof(data) - 4);
+      uint8_t data[36] = {7, 7, 0x12, 0x20};     // SYNC command
+      memset(data + 4, 0x55, sizeof(data) - 4);  // Fill with 0x55
       if (cmd(ctx, 8, data, sizeof(data), 0, 100) == 0) {
         sleep_ms(50);
         flushio(ctx->fd);  // Discard all data
