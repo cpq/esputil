@@ -54,7 +54,8 @@ typedef enum { false = 0, true = 1 } bool;
 #include <unistd.h>
 #endif
 
-#define ALIGN(a, b) (((a) + (b) -1) / (b) * (b))
+enum { READY_STDIN = 1, READY_SERIAL = 2, READY_SOCK = 4 };
+//#define ALIGN(a, b) (((a) + (b) -1) / (b) * (b))
 
 // https://datatracker.ietf.org/doc/html/rfc1055
 enum { END = 192, ESC = 219, ESC_END = 220, ESC_ESC = 221 };
@@ -302,14 +303,20 @@ static int open_serial(const char *name, int baud, bool verbose) {
   return fd;
 }
 
-static int iowait(int fd, int sock, int ms) {
+static bool is_ready(int fd) {
+  DWORD errors = 0;
   COMSTAT cs = {0};
+  ClearCommError((HANDLE) _get_osfhandle(fd), &errors, &cs);
+  return cs.cbInQue > 0;
+}
+
+static int iowait(int fd, int sock, int ms) {
   DWORD errors, flags = 0;
   int i;
   for (i = 0; i < ms && flags == 0; i++) {
-    sleep_ms(1);
-    ClearCommError((HANDLE) _get_osfhandle(fd), &errors, &cs);
-    if (cs.cbInQue > 0) flags |= 2;  // There is something to read
+    if (is_ready(fd)) flags |= READY_SERIAL;
+    if (is_ready(0)) flags |= READY_STDIN;
+    if (flags == 0) sleep_ms(1);
   }
   return flags;
 }
@@ -384,10 +391,10 @@ static int open_serial(const char *name, int baud, bool verbose) {
   if (fd < 0) {
     fail("open(%s): %d (%s)\n", name, fd, strerror(errno));
   } else if (tcgetattr(fd, &tio) == 0) {
-    tio.c_iflag = 0;             // input mode
-    tio.c_oflag = 0;             // output mode
-    tio.c_lflag = 0;             // local flags
-    tio.c_cflag = CLOCAL | CS8;  // control flags
+    tio.c_iflag = 0;                     // input mode
+    tio.c_oflag = 0;                     // output mode
+    tio.c_lflag = 0;                     // local flags
+    tio.c_cflag = CLOCAL | CREAD | CS8;  // control flags
     // Order is important: setting speed must go after setting flags,
     // becase (depending on implementation) speed flags could reside in flags
     cfsetospeed(&tio, termios_baud(baud));
@@ -408,9 +415,9 @@ static int iowait(int fd, int sock, int ms) {
   FD_SET(fd, &rset);  // Listen to the UART fd
   if (sock > 0) FD_SET(sock, &rset);
   if (select((fd > sock ? fd : sock) + 1, &rset, 0, 0, &tv) < 0) FD_ZERO(&rset);
-  if (FD_ISSET(0, &rset)) ready |= 1;
-  if (FD_ISSET(fd, &rset)) ready |= 2;
-  if (sock > 0 && FD_ISSET(sock, &rset)) ready |= 4;
+  if (FD_ISSET(0, &rset)) ready |= READY_STDIN;
+  if (FD_ISSET(fd, &rset)) ready |= READY_SERIAL;
+  if (sock > 0 && FD_ISSET(sock, &rset)) ready |= READY_SOCK;
   return ready;
 }
 #endif  // End of UNIX-specific routines
@@ -465,7 +472,7 @@ static int cmd(struct ctx *ctx, uint8_t op, void *buf, uint16_t len,
   for (;;) {
     int i, n, ready, eofs, ecode;
     ready = iowait(ctx->fd, ctx->sock, timeout_ms);  // Wait for data
-    if (!(ready & 2)) return 1;                      // Interrupted, fail
+    if (!(ready & READY_SERIAL)) return 1;           // Interrupted, fail
     n = read(ctx->fd, tmp, sizeof(tmp));             // Read from a device
     if (n <= 0) fail("Serial line closed\n");        // Doh. Unplugged maybe?
     // if (ctx->verbose) dump("--RAW_RESPONSE:", tmp, n);
@@ -551,7 +558,7 @@ static bool chip_connect(struct ctx *ctx) {
 
 static void monitor(struct ctx *ctx) {
   int i, ready = iowait(ctx->fd, ctx->sock, 1000);
-  if (ready & 2) {
+  if (ready & READY_SERIAL) {
     uint8_t buf[BUFSIZ];
     int n = read(ctx->fd, buf, sizeof(buf));   // Read from a device
     if (n <= 0) fail("Serial line closed\n");  // If serial is closed, exit
@@ -568,13 +575,13 @@ static void monitor(struct ctx *ctx) {
     }
     fflush(stdout);
   }
-  if (ready & 1) {  // Forward stdin to a device
+  if (ready & READY_STDIN) {  // Forward stdin to a device
     uint8_t buf[BUFSIZ];
     int n = read(0, buf, sizeof(buf));
     if (n > 0 && ctx->verbose) dump("WRITE", buf, n);
     for (i = 0; i < n; i++) uart_tx(buf[i], &ctx->fd);
   }
-  if (ready & 4) {  // Something in the UDP socket
+  if (ready & READY_SOCK) {  // Something in the UDP socket
     uint8_t buf[2048];
     unsigned sl = sizeof(ctx->sin);
     int n = recvfrom(ctx->sock, buf, sizeof(buf), 0,
