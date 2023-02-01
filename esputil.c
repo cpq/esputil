@@ -153,9 +153,7 @@ static size_t slip_recv(unsigned char c, struct slip *slip) {
   return res;
 }
 
-void signal_handler(int signo) {
-  s_signo = signo;
-}
+void signal_handler(int signo) { s_signo = signo; }
 
 static int fail(const char *fmt, ...) {
   va_list ap;
@@ -266,9 +264,7 @@ static uint8_t checksum(const uint8_t *buf, size_t len) {
 }
 
 #ifdef _WIN32  // Windows - specific routines
-static void sleep_ms(int milliseconds) {
-  Sleep(milliseconds);
-}
+static void sleep_ms(int milliseconds) { Sleep(milliseconds); }
 
 static void flushio(int fd) {
   PurgeComm((HANDLE) _get_osfhandle(fd), PURGE_RXCLEAR | PURGE_TXCLEAR);
@@ -339,13 +335,9 @@ static void set_dtr(int fd, bool value) {
   ioctl(fd, value ? TIOCMBIS : TIOCMBIC, &v);
 }
 
-static void flushio(int fd) {
-  tcflush(fd, TCIOFLUSH);
-}
+static void flushio(int fd) { tcflush(fd, TCIOFLUSH); }
 
-static void sleep_ms(int milliseconds) {
-  usleep(milliseconds * 1000);
-}
+static void sleep_ms(int milliseconds) { usleep(milliseconds * 1000); }
 
 // clang-format off
 static speed_t termios_baud(int baud) {
@@ -848,6 +840,16 @@ static void flashbin(struct ctx *ctx, uint16_t flash_params,
   fclose(fp);
 }
 
+static const char *download(const char *url) {
+  char cmd[2048];
+  const char *slash = strrchr(url, '/');
+  if (slash == NULL) fail("Invalid URL: %s\n", url);
+  snprintf(cmd, sizeof(cmd), "curl -sL %s -o %s", url, slash + 1);
+  printf("%s\n", cmd);
+  if (system(cmd) != 0) fail("Download failed\n");
+  return slash + 1;
+}
+
 static void flash(struct ctx *ctx, const char **args) {
   uint16_t flash_params = 0;
   if (!chip_connect(ctx)) fail("Error connecting\n");
@@ -883,6 +885,10 @@ static void flash(struct ctx *ctx, const char **args) {
       // A .hex file is fed to us. Unhex it first into a temp dir
       char file_list[8192], tmpdir[1024], *s = file_list;
       size_t n;
+
+      bool is_url = (strncmp(args[0], "http", 4) == 0);
+      if (is_url) args[0] = download(args[0]);
+
       snprintf(tmpdir, sizeof(tmpdir), "%s.tmp", args[0]);
       unhex(args[0], tmpdir, file_list, sizeof(file_list));
       // Now iterate over the unhexed files, and flash each
@@ -893,10 +899,14 @@ static void flash(struct ctx *ctx, const char **args) {
         flashbin(ctx, flash_params, strtoul(slash ? slash + 1 : s, NULL, 0), s);
         s = p;
       }
-      rmrf(tmpdir);  // Cleanup temp dir
-      args += 1;     // Move to next file
+      if (is_url) remove(args[0]);  // Remove downloaded file
+      rmrf(tmpdir);                 // Cleanup temp dir
+      args += 1;                    // Move to next file
     } else if (args[1] != NULL) {
+      bool is_url = (strncmp(args[0], "http", 4) == 0);
+      if (is_url) args[1] = download(args[1]);
       flashbin(ctx, flash_params, strtoul(args[0], NULL, 0), args[1]);
+      if (is_url) remove(args[0]);  // Remove downloaded file
       args += 2;
     }
   }
