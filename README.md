@@ -17,6 +17,9 @@ Some notable features are:
 - `esputil unhex` command unpacks .hex file back into a set of .bin files
 - `esputil flash` command can flash either .hex files or .bin files
 
+`esputil` works similarly to `esptool.py --no-stub`, in other words, it does
+not use in-memory stub.
+
 
 # Usage
 
