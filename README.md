@@ -59,8 +59,8 @@ bootloader uses SLIP framing for a simple serial protocol, which is
 described at https://docs.espressif.com/projects/esptool/en/latest/advanced-topics/serial-protocol.html.
 
 Using that SLIP protocol, it is possible to write images to flash at
-any offset. That is what [tools/esputil.c](tools/esputil.c) implements.
-The image should be of the following format:
+any offset. That is what [esputil.c](esputil.c) implements.
+The ESP32 image file has the following format:
 
 - COMMON HEADER - 4 bytes, contains number of segments in the image and flash params
 - ENTRY POINT ADDRESS - 4 bytes, the beginning of the image code
