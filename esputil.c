@@ -54,6 +54,8 @@ typedef enum { false = 0, true = 1 } bool;
 #include <unistd.h>
 #endif
 
+#define DEFAULT_RESET_DELAY  50
+
 enum { READY_STDIN = 1, READY_SERIAL = 2, READY_SOCK = 4 };
 //#define ALIGN(a, b) (((a) + (b) -1) / (b) * (b))
 
@@ -335,6 +337,21 @@ static void set_dtr(int fd, bool value) {
   ioctl(fd, value ? TIOCMBIS : TIOCMBIC, &v);
 }
 
+static void set_rts_and_dtr(int fd, bool rts_val, bool dtr_val) {
+  int status;
+  ioctl(fd, TIOCMGET, &status);
+  if (rts_val)
+    status |= TIOCM_RTS;
+  else
+    status &= ~TIOCM_RTS;
+  if (dtr_val)
+    status |= TIOCM_DTR;
+  else
+    status &= ~TIOCM_DTR;
+
+  ioctl(fd, TIOCMSET, &status);
+}
+
 static void flushio(int fd) { tcflush(fd, TCIOFLUSH); }
 
 static void sleep_ms(int milliseconds) { usleep(milliseconds * 1000); }
@@ -436,15 +453,62 @@ static void reset_to_bootloader_usb_jtag_serial(int fd) {
   set_rts(fd, false);
 }
 
-static void reset_to_bootloader(int fd) {
+static void reset_to_bootloader(int fd, int delay_ms) {
   sleep_ms(100);       // Wait
   set_dtr(fd, false);  // IO0 -> HIGH
   set_rts(fd, true);   // EN -> LOW
   sleep_ms(100);       // Wait
   set_dtr(fd, true);   // IO0 -> LOW
   set_rts(fd, false);  // EN -> HIGH
-  sleep_ms(50);        // Wait
+  sleep_ms(delay_ms);  // Wait
   set_dtr(fd, false);  // IO0 -> HIGH
+}
+
+// From `UnixTightReset()` method of `reset.py` of `esptool`.
+// https://github.com/espressif/esptool/blob/8f8f50817eb36cadff1301b687789b6c6ebbd71e/esptool/reset.py#L76
+static void unix_tight_reset_to_bootloader(int fd, int delay_ms) {
+  set_rts_and_dtr(fd, false, false);
+  set_rts_and_dtr(fd, true, true);
+  set_rts_and_dtr(fd, true, false);   // IO0=HIGH & EN=LOW, chip in reset
+  sleep_ms(100);
+  set_rts_and_dtr(fd, false, true);   // IO0=LOW & EN=HIGH, chip out of reset
+  sleep_ms(delay_ms);
+  set_rts_and_dtr(fd, false, false);  // IO0=HIGH, done
+  set_dtr(fd, false);                 // Needed in some environments to ensure IO0=HIGH
+}
+
+// From `_construct_reset_strategy_sequence()` method of `loader.py` of `esptool`.
+// https://github.com/espressif/esptool/blob/8f8f50817eb36cadff1301b687789b6c6ebbd71e/esptool/loader.py#L574
+static void reset_strategy(int fd) {
+  static int count = 0;
+  #ifdef _WIN32
+  if (count > 2)  count = 0;
+
+  if (count == 0) {
+    reset_to_bootloader_usb_jtag_serial(fd);
+  } else if (count == 1) {
+    reset_to_bootloader(fd, DEFAULT_RESET_DELAY);
+  } else {
+    reset_to_bootloader(fd, DEFAULT_RESET_DELAY + 50);
+  }
+
+  #else // For UNIX
+  if (count > 4)  count = 0;
+
+  if (count == 0) {
+    reset_to_bootloader_usb_jtag_serial(fd);
+  } else if (count == 1) {
+    unix_tight_reset_to_bootloader(fd, DEFAULT_RESET_DELAY);
+  } else if (count == 2) {
+    unix_tight_reset_to_bootloader(fd, DEFAULT_RESET_DELAY + 50);
+  } else if (count == 3) {
+    reset_to_bootloader(fd, DEFAULT_RESET_DELAY);
+  } else {
+    reset_to_bootloader(fd, DEFAULT_RESET_DELAY + 50);
+  }
+  #endif
+
+  ++count;
 }
 
 // Execute serial command.
@@ -528,11 +592,7 @@ static bool chip_connect(struct ctx *ctx) {
   int i, j;
   for (j = 0; j < 6; j++) {
     // Alternate different reset methods
-    if (j & 1) {
-      reset_to_bootloader_usb_jtag_serial(ctx->fd);
-    } else {
-      reset_to_bootloader(ctx->fd);
-    }
+    reset_strategy(ctx->fd);
     flushio(ctx->fd);
     for (i = 0; i < 2 + j; i++) {
       uint8_t data[36] = {7, 7, 0x12, 0x20};     // SYNC command
@@ -598,6 +658,8 @@ static void info(struct ctx *ctx) {
            mac1 & 255, (mac0 >> 24) & 255, (mac0 >> 16) & 255,
            (mac0 >> 8) & 255, mac0 & 255);
   }
+
+  hard_reset(ctx->fd);
 }
 
 static void readmem(struct ctx *ctx, const char **args) {
@@ -617,6 +679,8 @@ static void readmem(struct ctx *ctx, const char **args) {
       }
     }
   }
+
+  hard_reset(ctx->fd);
 }
 
 static void spiattach(struct ctx *ctx) {
