@@ -721,6 +721,8 @@ static void readflash(struct ctx *ctx, const char **args) {
       }
     }
   }
+
+  hard_reset(ctx->fd);
 }
 
 static inline unsigned long hex_to_ul(const char *s, int len) {
