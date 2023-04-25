@@ -81,7 +81,7 @@ struct chip {
 #define CHIP_ID_ESP32_S3_BETA2 0xeb004136
 #define CHIP_ID_ESP32_S3_BETA3 0x9
 #define CHIP_ID_ESP32_C6_BETA 0x0da1806f
-  const char *name;  // Chpi name, e.g. "ESP32-S2"
+  const char *name;  // Chip name, e.g. "ESP32-S2"
   uint32_t bla;      // Bootloader flash offset
 };
 
@@ -650,14 +650,52 @@ static void info(struct ctx *ctx) {
   if (!chip_connect(ctx)) fail("Error connecting\n");
   printf("Chip ID: 0x%x (%s)\n", ctx->chip.id, ctx->chip.name);
 
-  if (ctx->chip.id == CHIP_ID_ESP32_C3_ECO3) {
-    uint32_t efuse_base = 0x60008800, mac0, mac1;
-    read32(ctx, efuse_base + 0x44, &mac0);
-    read32(ctx, efuse_base + 0x48, &mac1);
-    printf("MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", (mac1 >> 8) & 255,
-           mac1 & 255, (mac0 >> 24) & 255, (mac0 >> 16) & 255,
-           (mac0 >> 8) & 255, mac0 & 255);
+  uint32_t efuse_base, reg_off_1, reg_off_2, mac0, mac1;
+  uint32_t uart_clkdiv_reg, uart_clkdiv, xtal_clkdiv;
+  float est_xtal;
+
+  if (ctx->chip.id == CHIP_ID_ESP8266) {
+    // For ESP8266
+    xtal_clkdiv = 2;
+  } else {
+    // For ESP32*
+    xtal_clkdiv = 1;
   }
+
+  if (ctx->chip.id == CHIP_ID_ESP32_C3_ECO3) {
+    efuse_base = 0x60008800;
+    reg_off_1 = 0x44;
+    reg_off_2 = 0x48;
+    uart_clkdiv_reg = 0x60000014;
+  } else if (ctx->chip.id == CHIP_ID_ESP32_S2) {
+    efuse_base = 0x3F41A044;
+    reg_off_1 = 0x44;
+    reg_off_2 = 0x48;
+    uart_clkdiv_reg = 0x3F400014;
+  } else if (ctx->chip.id == CHIP_ID_ESP32_S3_BETA3) {
+    efuse_base = 0x60007000;
+    reg_off_1 = 0x44;
+    reg_off_2 = 0x48;
+    uart_clkdiv_reg = 0x60000014;
+  } else if (ctx->chip.id == CHIP_ID_ESP32) {
+    efuse_base = 0x3FF5A000;
+    reg_off_1 = 0x04;
+    reg_off_2 = 0x08;
+    uart_clkdiv_reg = 0x3FF40014;
+  } else {
+    return;
+  }
+
+  read32(ctx, efuse_base + reg_off_1, &mac0);
+  read32(ctx, efuse_base + reg_off_2, &mac1);
+  printf("MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", (mac1 >> 8) & 255,
+          mac1 & 255, (mac0 >> 24) & 255, (mac0 >> 16) & 255,
+          (mac0 >> 8) & 255, mac0 & 255);
+
+  read32(ctx, uart_clkdiv_reg, &uart_clkdiv);
+  uart_clkdiv &= 0xFFFFF;
+  est_xtal = (atoi(ctx->baud) * uart_clkdiv) / 1e6 / xtal_clkdiv;
+  printf("Detected xtal freq: %.2fMHz\n", (double)est_xtal);
 
   hard_reset(ctx->fd);
 }
