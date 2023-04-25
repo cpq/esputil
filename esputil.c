@@ -54,6 +54,8 @@ typedef enum { false = 0, true = 1 } bool;
 #include <unistd.h>
 #endif
 
+#define DEFAULT_RESET_DELAY  50
+
 enum { READY_STDIN = 1, READY_SERIAL = 2, READY_SOCK = 4 };
 //#define ALIGN(a, b) (((a) + (b) -1) / (b) * (b))
 
@@ -79,7 +81,7 @@ struct chip {
 #define CHIP_ID_ESP32_S3_BETA2 0xeb004136
 #define CHIP_ID_ESP32_S3_BETA3 0x9
 #define CHIP_ID_ESP32_C6_BETA 0x0da1806f
-  const char *name;  // Chpi name, e.g. "ESP32-S2"
+  const char *name;  // Chip name, e.g. "ESP32-S2"
   uint32_t bla;      // Bootloader flash offset
 };
 
@@ -335,6 +337,21 @@ static void set_dtr(int fd, bool value) {
   ioctl(fd, value ? TIOCMBIS : TIOCMBIC, &v);
 }
 
+static void set_rts_and_dtr(int fd, bool rts_val, bool dtr_val) {
+  int status;
+  ioctl(fd, TIOCMGET, &status);
+  if (rts_val)
+    status |= TIOCM_RTS;
+  else
+    status &= ~TIOCM_RTS;
+  if (dtr_val)
+    status |= TIOCM_DTR;
+  else
+    status &= ~TIOCM_DTR;
+
+  ioctl(fd, TIOCMSET, &status);
+}
+
 static void flushio(int fd) { tcflush(fd, TCIOFLUSH); }
 
 static void sleep_ms(int milliseconds) { usleep(milliseconds * 1000); }
@@ -436,15 +453,62 @@ static void reset_to_bootloader_usb_jtag_serial(int fd) {
   set_rts(fd, false);
 }
 
-static void reset_to_bootloader(int fd) {
+static void reset_to_bootloader(int fd, int delay_ms) {
   sleep_ms(100);       // Wait
   set_dtr(fd, false);  // IO0 -> HIGH
   set_rts(fd, true);   // EN -> LOW
   sleep_ms(100);       // Wait
   set_dtr(fd, true);   // IO0 -> LOW
   set_rts(fd, false);  // EN -> HIGH
-  sleep_ms(50);        // Wait
+  sleep_ms(delay_ms);  // Wait
   set_dtr(fd, false);  // IO0 -> HIGH
+}
+
+// From `UnixTightReset()` method of `reset.py` of `esptool`.
+// https://github.com/espressif/esptool/blob/8f8f50817eb36cadff1301b687789b6c6ebbd71e/esptool/reset.py#L76
+static void unix_tight_reset_to_bootloader(int fd, int delay_ms) {
+  set_rts_and_dtr(fd, false, false);
+  set_rts_and_dtr(fd, true, true);
+  set_rts_and_dtr(fd, true, false);   // IO0=HIGH & EN=LOW, chip in reset
+  sleep_ms(100);
+  set_rts_and_dtr(fd, false, true);   // IO0=LOW & EN=HIGH, chip out of reset
+  sleep_ms(delay_ms);
+  set_rts_and_dtr(fd, false, false);  // IO0=HIGH, done
+  set_dtr(fd, false);                 // Needed in some environments to ensure IO0=HIGH
+}
+
+// From `_construct_reset_strategy_sequence()` method of `loader.py` of `esptool`.
+// https://github.com/espressif/esptool/blob/8f8f50817eb36cadff1301b687789b6c6ebbd71e/esptool/loader.py#L574
+static void reset_strategy(int fd) {
+  static int count = 0;
+  #ifdef _WIN32
+  if (count > 2)  count = 0;
+
+  if (count == 0) {
+    reset_to_bootloader_usb_jtag_serial(fd);
+  } else if (count == 1) {
+    reset_to_bootloader(fd, DEFAULT_RESET_DELAY);
+  } else {
+    reset_to_bootloader(fd, DEFAULT_RESET_DELAY + 50);
+  }
+
+  #else // For UNIX
+  if (count > 4)  count = 0;
+
+  if (count == 0) {
+    reset_to_bootloader_usb_jtag_serial(fd);
+  } else if (count == 1) {
+    unix_tight_reset_to_bootloader(fd, DEFAULT_RESET_DELAY);
+  } else if (count == 2) {
+    unix_tight_reset_to_bootloader(fd, DEFAULT_RESET_DELAY + 50);
+  } else if (count == 3) {
+    reset_to_bootloader(fd, DEFAULT_RESET_DELAY);
+  } else {
+    reset_to_bootloader(fd, DEFAULT_RESET_DELAY + 50);
+  }
+  #endif
+
+  ++count;
 }
 
 // Execute serial command.
@@ -528,11 +592,7 @@ static bool chip_connect(struct ctx *ctx) {
   int i, j;
   for (j = 0; j < 6; j++) {
     // Alternate different reset methods
-    if (j & 1) {
-      reset_to_bootloader_usb_jtag_serial(ctx->fd);
-    } else {
-      reset_to_bootloader(ctx->fd);
-    }
+    reset_strategy(ctx->fd);
     flushio(ctx->fd);
     for (i = 0; i < 2 + j; i++) {
       uint8_t data[36] = {7, 7, 0x12, 0x20};     // SYNC command
@@ -590,14 +650,54 @@ static void info(struct ctx *ctx) {
   if (!chip_connect(ctx)) fail("Error connecting\n");
   printf("Chip ID: 0x%x (%s)\n", ctx->chip.id, ctx->chip.name);
 
-  if (ctx->chip.id == CHIP_ID_ESP32_C3_ECO3) {
-    uint32_t efuse_base = 0x60008800, mac0, mac1;
-    read32(ctx, efuse_base + 0x44, &mac0);
-    read32(ctx, efuse_base + 0x48, &mac1);
-    printf("MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", (mac1 >> 8) & 255,
-           mac1 & 255, (mac0 >> 24) & 255, (mac0 >> 16) & 255,
-           (mac0 >> 8) & 255, mac0 & 255);
+  uint32_t efuse_base, reg_off_1, reg_off_2, mac0, mac1;
+  uint32_t uart_clkdiv_reg, uart_clkdiv, xtal_clkdiv;
+  float est_xtal;
+
+  if (ctx->chip.id == CHIP_ID_ESP8266) {
+    // For ESP8266
+    xtal_clkdiv = 2;
+  } else {
+    // For ESP32*
+    xtal_clkdiv = 1;
   }
+
+  if (ctx->chip.id == CHIP_ID_ESP32_C3_ECO3) {
+    efuse_base = 0x60008800;
+    reg_off_1 = 0x44;
+    reg_off_2 = 0x48;
+    uart_clkdiv_reg = 0x60000014;
+  } else if (ctx->chip.id == CHIP_ID_ESP32_S2) {
+    efuse_base = 0x3F41A044;
+    reg_off_1 = 0x44;
+    reg_off_2 = 0x48;
+    uart_clkdiv_reg = 0x3F400014;
+  } else if (ctx->chip.id == CHIP_ID_ESP32_S3_BETA3) {
+    efuse_base = 0x60007000;
+    reg_off_1 = 0x44;
+    reg_off_2 = 0x48;
+    uart_clkdiv_reg = 0x60000014;
+  } else if (ctx->chip.id == CHIP_ID_ESP32) {
+    efuse_base = 0x3FF5A000;
+    reg_off_1 = 0x04;
+    reg_off_2 = 0x08;
+    uart_clkdiv_reg = 0x3FF40014;
+  } else {
+    return;
+  }
+
+  read32(ctx, efuse_base + reg_off_1, &mac0);
+  read32(ctx, efuse_base + reg_off_2, &mac1);
+  printf("MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", (mac1 >> 8) & 255,
+          mac1 & 255, (mac0 >> 24) & 255, (mac0 >> 16) & 255,
+          (mac0 >> 8) & 255, mac0 & 255);
+
+  read32(ctx, uart_clkdiv_reg, &uart_clkdiv);
+  uart_clkdiv &= 0xFFFFF;
+  est_xtal = (atoi(ctx->baud) * uart_clkdiv) / 1e6 / xtal_clkdiv;
+  printf("Detected xtal freq: %.2fMHz\n", (double)est_xtal);
+
+  hard_reset(ctx->fd);
 }
 
 static void readmem(struct ctx *ctx, const char **args) {
@@ -617,6 +717,8 @@ static void readmem(struct ctx *ctx, const char **args) {
       }
     }
   }
+
+  hard_reset(ctx->fd);
 }
 
 static void spiattach(struct ctx *ctx) {
@@ -657,6 +759,8 @@ static void readflash(struct ctx *ctx, const char **args) {
       }
     }
   }
+
+  hard_reset(ctx->fd);
 }
 
 static inline unsigned long hex_to_ul(const char *s, int len) {
