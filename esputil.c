@@ -153,7 +153,9 @@ static size_t slip_recv(unsigned char c, struct slip *slip) {
   return res;
 }
 
-void signal_handler(int signo) { s_signo = signo; }
+void signal_handler(int signo) {
+  s_signo = signo;
+}
 
 static int fail(const char *fmt, ...) {
   va_list ap;
@@ -214,7 +216,7 @@ static void usage(struct ctx *ctx) {
   printf("[-fspi FLASH_SPI] flash ADDrESS1 FILE1.bin ...\n");
   printf("  esputil [-v] [-b BAUD] [-p PORT] [-fp FLASH_PARAMS] ");
   printf("[-fspi FLASH_SPI] flash FILE.HEX\n");
-  printf("  esputil [-v] mkbin FIRMWARE.ELF FIRMWARE.BIN\n");
+  printf("  esputil [-v] [-chip detect] mkbin FIRMWARE.ELF FIRMWARE.BIN\n");
   printf("  esputil mkhex ADDRESS1 BINFILE1 ADDRESS2 BINFILE2 ...\n");
   printf("  esputil [-tmp TMP_DIR] unhex HEXFILE\n");
   exit(EXIT_FAILURE);
@@ -264,7 +266,9 @@ static uint8_t checksum(const uint8_t *buf, size_t len) {
 }
 
 #ifdef _WIN32  // Windows - specific routines
-static void sleep_ms(int milliseconds) { Sleep(milliseconds); }
+static void sleep_ms(int milliseconds) {
+  Sleep(milliseconds);
+}
 
 static void flushio(int fd) {
   PurgeComm((HANDLE) _get_osfhandle(fd), PURGE_RXCLEAR | PURGE_TXCLEAR);
@@ -335,9 +339,13 @@ static void set_dtr(int fd, bool value) {
   ioctl(fd, value ? TIOCMBIS : TIOCMBIC, &v);
 }
 
-static void flushio(int fd) { tcflush(fd, TCIOFLUSH); }
+static void flushio(int fd) {
+  tcflush(fd, TCIOFLUSH);
+}
 
-static void sleep_ms(int milliseconds) { usleep(milliseconds * 1000); }
+static void sleep_ms(int milliseconds) {
+  usleep(milliseconds * 1000);
+}
 
 // clang-format off
 static speed_t termios_baud(int baud) {
@@ -510,18 +518,6 @@ static void chip_detect(struct ctx *ctx) {
   fail("Unknown chip ID: %08x\n", chipid);
 }
 
-static void set_chip_from_string(struct ctx *ctx, const char *name) {
-  size_t i, nchips;
-  nchips = sizeof(s_known_chips) / sizeof(s_known_chips[0]);
-  for (i = 0; i < nchips; i++) {
-    if (strcasecmp(s_known_chips[i].name, name) == 0) {
-      ctx->chip = s_known_chips[i];
-      return;
-    }
-  }
-  fail("Unknown chip type: %s\n", name);
-}
-
 // Assume chip is rebooted and is in download mode.
 // Send SYNC commands until success, and detect chip ID
 static bool chip_connect(struct ctx *ctx) {
@@ -546,6 +542,21 @@ static bool chip_connect(struct ctx *ctx) {
     }
   }
   return false;
+}
+
+static void set_chip_id(struct ctx *ctx, const char *name) {
+  size_t i, nchips;
+  nchips = sizeof(s_known_chips) / sizeof(s_known_chips[0]);
+  for (i = 0; i < nchips; i++) {
+    if (strcasecmp(name, "detect") == 0) {
+      if (!chip_connect(ctx)) fail("Cannot detect chip\n");
+      return;
+    } else if (strcasecmp(s_known_chips[i].name, name) == 0) {
+      ctx->chip = s_known_chips[i];
+      return;
+    }
+  }
+  fail("Unknown chip type: %s\n", name);
 }
 
 static void monitor(struct ctx *ctx) {
@@ -983,10 +994,13 @@ static int mkbin(const char *elf_path, const char *bin_path, struct ctx *ctx) {
   uint8_t i, j, cs = 0xef, zero = 0, num_segments = elf_get_num_segments(&elf);
   uint32_t entrypoint = elf_get_entry_point(&elf);
 
-  // ESP32S2
-  if (ctx->chip.id == 0x000007c6) {
+  if (ctx->chip.id == CHIP_ID_ESP32_S2) {
     extended_hdr[0] = 0x00;
     extended_hdr[4] = 2;
+  }
+  if (ctx->chip.id == CHIP_ID_ESP32_C3_ECO_1_2 ||
+      ctx->chip.id == CHIP_ID_ESP32_C3_ECO3) {
+    extended_hdr[4] = 5;
   }
 
   if (bin_fp == NULL) fail("Cannot open %s: %s\n", bin_path, strerror(errno));
@@ -1116,7 +1130,7 @@ int main(int argc, const char **argv) {
     } else if (strcmp(argv[i], "-fspi") == 0 && i + 1 < argc) {
       ctx.fspi = argv[++i];
     } else if (strcmp(argv[i], "-chip") == 0 && i + 1 < argc) {
-      set_chip_from_string(&ctx, argv[++i]);
+      set_chip_id(&ctx, argv[++i]);
     } else if (strcmp(argv[i], "-tmp") == 0 && i + 1 < argc) {
       temp_dir = argv[++i];
     } else if (strcmp(argv[i], "-udp") == 0 && i + 1 < argc) {
